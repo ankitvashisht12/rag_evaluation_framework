@@ -16,9 +16,9 @@ class Metrics(ABC):
     def extract_retrieved_chunks_ids(self, run: Run) -> List[str]:
         raise NotImplementedError
 
-    def to_langsmith_evaluator(self, k: Optional[int] = None) -> Callable[[Run, Optional[Example]], EvaluationResult]:
+    def to_langsmith_evaluator(self, metric_name: Optional[str] = None, k: Optional[int] = None) -> Callable[[Run, Optional[Example]], EvaluationResult]:
 
-        name = self.__class__.__name__
+        name = metric_name or self.__class__.__name__
 
         if k is not None:
             name = f"{name}@{k}"
