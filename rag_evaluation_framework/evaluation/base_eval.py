@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -14,6 +15,9 @@ from rag_evaluation_framework.evaluation.embedder.openai_embedder import OpenAIE
 from rag_evaluation_framework.evaluation.chunker.recursive_char_text_splitter import RecursiveCharTextSplitter
 from rag_evaluation_framework.evaluation.vector_store.chroma import ChromaVectorStore
 from rag_evaluation_framework.evaluation.metrics.chunk_level_recall import ChunkLevelRecall
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 class Evaluation:
     """
@@ -56,12 +60,20 @@ class Evaluation:
         self.langsmith_dataset_name = langsmith_dataset_name
         self.kb_data_path = kb_data_path
         self.query_field = query_field
+        
+        logger.debug(
+            "Initialized Evaluation with dataset='%s', kb_path='%s', query_field='%s'",
+            langsmith_dataset_name, kb_data_path, query_field
+        )
 
     def __get_kb_markdown_files_path(self) -> List[Path]:
         if not os.path.exists(self.kb_data_path):
+            logger.error("Knowledge base path does not exist: %s", self.kb_data_path)
             raise FileNotFoundError(f"Knowledge base data path {self.kb_data_path} does not exist")
 
-        return [Path(os.path.join(self.kb_data_path, file)) for file in os.listdir(self.kb_data_path) if file.endswith(".md")]
+        files = [Path(os.path.join(self.kb_data_path, file)) for file in os.listdir(self.kb_data_path) if file.endswith(".md")]
+        logger.debug("Found %d markdown files in knowledge base", len(files))
+        return files
 
     def __run_retrieval(self, input: dict, embedder: Embedder, vector_store: VectorStore, k: int, reranker: Optional[Reranker] = None) -> List[str]:
         """
@@ -80,15 +92,20 @@ class Evaluation:
         query = input.get(self.query_field, "")
         
         if not query:
+            logger.warning("Empty query received, returning empty results")
             return []
+        
+        logger.debug("Running retrieval for query: %s...", query[:50] if len(query) > 50 else query)
         
         # Embed the query
         query_embedding = embedder.embed_docs([query])[0]
         
         # Search in vector store using query embedding
         retrieved_chunks = vector_store.search(query_embedding, k)
+        logger.debug("Retrieved %d chunks from vector store", len(retrieved_chunks))
 
         if reranker:
+            logger.debug("Applying reranker")
             retrieved_chunks = reranker.rerank(retrieved_chunks, query, k)
 
         return retrieved_chunks
@@ -130,28 +147,41 @@ class Evaluation:
         if not self.kb_data_path:
             raise ValueError("kb_data_path is required")
 
+        logger.info("Starting evaluation run with k=%d", k)
+        
         if not chunker:
             chunker = self.__get_default_chunker()
+            logger.debug("Using default chunker: %s", type(chunker).__name__)
         
         if not embedder:
             embedder = self.__get_default_embedder()
+            logger.debug("Using default embedder: %s", type(embedder).__name__)
 
         if not vector_store:
             vector_store = self.__get_default_vector_store()
+            logger.debug("Using default vector store: %s", type(vector_store).__name__)
 
         if not metrics:
-            metrics= self.__get_default_metrics()
+            metrics = self.__get_default_metrics()
+            logger.debug("Using default metrics: %s", list(metrics.keys()))
 
         # Process Knowledge base (chunk, embed and store in vector store)
+        logger.info("Processing knowledge base...")
         kb_markdown_files_path = self.__get_kb_markdown_files_path()
+        total_chunks = 0
 
         for file_path in kb_markdown_files_path:
+            logger.debug("Processing file: %s", file_path.name)
             with open(file_path, "r", encoding="utf-8") as file:
                 file_content = file.read()
                 chunked_docs = chunker.chunk(file_content)
+                logger.debug("Created %d chunks from %s", len(chunked_docs), file_path.name)
                 embeddings = embedder.embed_docs(chunked_docs)
                 vector_store.add_docs(chunked_docs, embeddings)
+                total_chunks += len(chunked_docs)
 
+        logger.info("Knowledge base indexed: %d total chunks from %d files", total_chunks, len(kb_markdown_files_path))
+        
         langsmith_evaluators = get_langsmith_evaluators(metrics, k)
 
         # Use config if provided, otherwise use defaults
@@ -159,6 +189,11 @@ class Evaluation:
         description = config.description if config else ""
         max_concurrency = config.max_concurrency if config else 4
 
+        logger.info(
+            "Running LangSmith evaluation on dataset '%s' with %d evaluators",
+            self.langsmith_dataset_name, len(langsmith_evaluators)
+        )
+        
         # Run evaluation on langsmith dataset
         results = evaluate(
             lambda input: self.__run_retrieval(input, embedder, vector_store, k, reranker),
@@ -168,6 +203,8 @@ class Evaluation:
             description=description,
             max_concurrency=max_concurrency,
         )
+        
+        logger.debug("LangSmith evaluation completed")
 
         # Extract metrics and experiment URL from results
         # ExperimentResults is iterable - iterate directly over it
@@ -233,16 +270,20 @@ class Evaluation:
         except (AttributeError, TypeError, StopIteration) as e:
             # If results structure is different, try alternative extraction methods
             # The raw_results will still contain all the information
+            logger.warning("Could not extract metrics from results: %s", str(e))
             try:
                 # Alternative: Use to_pandas() method if available
                 if hasattr(results, 'to_pandas'):
                     df = results.to_pandas()
+                    logger.debug("Falling back to pandas extraction")
                     # Extract metrics from dataframe columns if they exist
                     # This is a fallback - the iteration method above should work
                     pass
-            except Exception:
-                pass
+            except Exception as fallback_error:
+                logger.debug("Pandas fallback also failed: %s", str(fallback_error))
 
+        logger.info("Evaluation complete. Metrics: %s", metrics_dict)
+        
         return {
             "metrics": metrics_dict,
             "langsmith_experiment_url": langsmith_experiment_url,

@@ -1,7 +1,11 @@
-import chromadb
+import logging
 from typing import List, Optional
 
+import chromadb
+
 from rag_evaluation_framework.evaluation.vector_store.base import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class ChromaVectorStore(VectorStore):
@@ -32,8 +36,10 @@ class ChromaVectorStore(VectorStore):
         
         # Initialize ChromaDB client
         if persist_directory:
+            logger.debug("Initializing ChromaDB with persistence at: %s", persist_directory)
             self._client = chromadb.PersistentClient(path=persist_directory)
         else:
+            logger.debug("Initializing ChromaDB in-memory client")
             self._client = chromadb.Client()
         
         # Get or create collection
@@ -41,6 +47,7 @@ class ChromaVectorStore(VectorStore):
             name=collection_name,
             metadata={"hnsw:space": "cosine"}  # Use cosine similarity
         )
+        logger.debug("Using collection '%s' with cosine similarity", collection_name)
 
     def add_docs(
         self, 
@@ -73,6 +80,7 @@ class ChromaVectorStore(VectorStore):
             embeddings=embeddings,  # type: ignore[arg-type]
             ids=doc_ids
         )
+        logger.debug("Added %d documents to collection '%s'", len(docs), self.collection_name)
 
     def search(self, query_embedding: List[float], k: int) -> List[str]:
         """
@@ -158,6 +166,7 @@ class ChromaVectorStore(VectorStore):
 
     def clear(self) -> None:
         """Clear all documents from the collection."""
+        logger.debug("Clearing collection '%s'", self.collection_name)
         # Delete and recreate the collection
         self._client.delete_collection(name=self.collection_name)
         self._collection = self._client.get_or_create_collection(
