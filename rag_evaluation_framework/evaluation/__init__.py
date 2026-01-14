@@ -1,4 +1,4 @@
-
 from .base_eval import Evaluation
+from .config import EvaluationConfig
 
-__all__ = ["Evaluation"]
+__all__ = ["Evaluation", "EvaluationConfig"]
