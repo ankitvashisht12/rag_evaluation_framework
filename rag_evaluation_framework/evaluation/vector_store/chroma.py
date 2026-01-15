@@ -1,9 +1,13 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Mapping, Union
 
 import chromadb
+from chromadb.api.types import SparseVector
 
 from rag_evaluation_framework.evaluation.vector_store.base import VectorStore
+
+MetadataValue = Union[str, int, float, SparseVector, None]
+Metadata = Mapping[str, MetadataValue]
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +57,8 @@ class ChromaVectorStore(VectorStore):
         self, 
         docs: List[str], 
         embeddings: List[List[float]], 
-        doc_ids: Optional[List[str]] = None
+        doc_ids: Optional[List[str]] = None,
+        metadatas: Optional[List[Metadata]] = None,
     ) -> None:
         """
         Add documents and their embeddings to the vector store.
@@ -74,11 +79,15 @@ class ChromaVectorStore(VectorStore):
             doc_ids = [f"doc_{self._id_counter + i}" for i in range(len(docs))]
             self._id_counter += len(docs)
         
+        if metadatas is not None and len(metadatas) != len(docs):
+            raise ValueError(f"Number of metadatas ({len(metadatas)}) must match number of docs ({len(docs)})")
+
         # Add to ChromaDB collection
         self._collection.add(
             documents=docs,
             embeddings=embeddings,  # type: ignore[arg-type]
-            ids=doc_ids
+            ids=doc_ids,
+            metadatas=metadatas,
         )
         logger.debug("Added %d documents to collection '%s'", len(docs), self.collection_name)
 
