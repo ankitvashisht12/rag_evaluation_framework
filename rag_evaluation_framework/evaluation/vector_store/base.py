@@ -16,6 +16,6 @@ class VectorStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def search(self, query_embedding: List[float], k: int) -> List[str]:
+    def search(self, query_embedding: List[float], k: int) -> List[Dict[str, Any]]:
         """Search for similar documents using query embedding."""
         raise NotImplementedError
