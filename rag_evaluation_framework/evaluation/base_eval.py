@@ -16,7 +16,7 @@ from rag_evaluation_framework.evaluation.utils import get_langsmith_evaluators
 from rag_evaluation_framework.evaluation.embedder.openai_embedder import OpenAIEmbedder
 from rag_evaluation_framework.evaluation.chunker.recursive_char_text_splitter import RecursiveCharTextSplitter
 from rag_evaluation_framework.evaluation.vector_store.chroma import ChromaVectorStore
-from rag_evaluation_framework.evaluation.metrics.chunk_level_recall import ChunkLevelRecall
+from rag_evaluation_framework.evaluation.metrics.token_level_recall import TokenLevelRecall
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class Evaluation:
         logger.debug("Found %d json files in knowledge base", len(files))
         return files
 
-    def __run_retrieval(self, input: dict, embedder: Embedder, vector_store: VectorStore, k: int, reranker: Optional[Reranker] = None) -> List[str]:
+    def __run_retrieval(self, input: dict, embedder: Embedder, vector_store: VectorStore, k: int, reranker: Optional[Reranker] = None) -> List[dict]:
         """
         Run retrieval for a single query.
         
@@ -93,7 +93,7 @@ class Evaluation:
             reranker: Optional reranker to apply
             
         Returns:
-            List of retrieved chunk texts
+            List of retrieved chunks with text and metadata
         """
         query = input.get(self.query_field, "")
         
@@ -112,7 +112,16 @@ class Evaluation:
 
         if reranker:
             logger.debug("Applying reranker")
-            retrieved_chunks = reranker.rerank(retrieved_chunks, query, k)
+            chunk_texts = [chunk.get("text", "") for chunk in retrieved_chunks]
+            reranked_texts = reranker.rerank(chunk_texts, query, k)
+            chunks_by_text: Dict[str, List[dict]] = {}
+            for chunk in retrieved_chunks:
+                chunks_by_text.setdefault(chunk.get("text", ""), []).append(chunk)
+            reranked_chunks: List[dict] = []
+            for text in reranked_texts:
+                if text in chunks_by_text and chunks_by_text[text]:
+                    reranked_chunks.append(chunks_by_text[text].pop(0))
+            retrieved_chunks = reranked_chunks
 
         return retrieved_chunks
 
@@ -133,7 +142,7 @@ class Evaluation:
 
     def __get_default_metrics(self) -> Dict[str, Metrics]:
         return {
-            "chunk_level_recall": ChunkLevelRecall()
+            "token_level_recall": TokenLevelRecall()
         }
 
 
@@ -194,13 +203,25 @@ class Evaluation:
                     )
                     metadata_value = {"value": metadata_value}
 
+                doc_id = metadata_value.get("doc_id", file_path.stem)
+                base_metadata = dict(metadata_value)
+                base_metadata.setdefault("doc_id", doc_id)
+
                 chunked_docs = chunker.chunk(markdown_content)
                 logger.debug("Created %d chunks from %s", len(chunked_docs), file_path.name)
-                embeddings = embedder.embed_docs(chunked_docs)
-                metadatas = [metadata_value] * len(chunked_docs)
+                chunk_texts = [chunk.text for chunk in chunked_docs]
+                embeddings = embedder.embed_docs(chunk_texts)
+                metadatas = [
+                    {
+                        **base_metadata,
+                        "start_index": chunk.start_index,
+                        "end_index": chunk.end_index,
+                    }
+                    for chunk in chunked_docs
+                ]
                 doc_ids = [str(uuid.uuid4()) for _ in chunked_docs]
                 vector_store.add_docs(
-                    chunked_docs,
+                    chunk_texts,
                     embeddings,
                     doc_ids=doc_ids,
                     metadatas=metadatas,
