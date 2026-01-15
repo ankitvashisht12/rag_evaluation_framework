@@ -91,7 +91,7 @@ class ChromaVectorStore(VectorStore):
         )
         logger.debug("Added %d documents to collection '%s'", len(docs), self.collection_name)
 
-    def search(self, query_embedding: List[float], k: int) -> List[str]:
+    def search(self, query_embedding: List[float], k: int) -> List[dict]:
         """
         Search for similar documents using the query embedding.
         
@@ -109,12 +109,18 @@ class ChromaVectorStore(VectorStore):
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=min(k, self._collection.count()),
-            include=["documents"]
+            include=["documents", "metadatas"]
         )
         
         # Extract documents from results
-        documents = results.get("documents", [[]])
-        return documents[0] if documents else []
+        documents = results.get("documents", [[]]) or [[]]
+        metadatas = results.get("metadatas", [[]]) or [[]]
+        docs_list = documents[0] if documents else []
+        metas_list = metadatas[0] if metadatas else []
+        return [
+            {"text": doc, "metadata": meta}
+            for doc, meta in zip(docs_list, metas_list)
+        ]
 
     def search_with_scores(
         self, 
