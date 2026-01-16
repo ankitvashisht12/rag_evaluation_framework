@@ -17,6 +17,10 @@ from rag_evaluation_framework.evaluation.embedder.openai_embedder import OpenAIE
 from rag_evaluation_framework.evaluation.chunker.recursive_char_text_splitter import RecursiveCharTextSplitter
 from rag_evaluation_framework.evaluation.vector_store.chroma import ChromaVectorStore
 from rag_evaluation_framework.evaluation.metrics.token_level_recall import TokenLevelRecall
+from rag_evaluation_framework.evaluation.metrics.token_level_precision import TokenLevelPrecision
+from rag_evaluation_framework.evaluation.metrics.token_level_iou import TokenLevelIoU
+from rag_evaluation_framework.evaluation.metrics.token_level_precision_omega import TokenLevelPrecisionOmega
+from rag_evaluation_framework.evaluation.metrics.token_level_mrr import TokenLevelMRR
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -142,7 +146,11 @@ class Evaluation:
 
     def __get_default_metrics(self) -> Dict[str, Metrics]:
         return {
-            "token_level_recall": TokenLevelRecall()
+            "token_level_recall": TokenLevelRecall(),
+            "token_level_precision": TokenLevelPrecision(),
+            "token_level_iou": TokenLevelIoU(),
+            "token_level_precision_omega": TokenLevelPrecisionOmega(),
+            "token_level_mrr": TokenLevelMRR(),
         }
 
 
