@@ -1,9 +1,10 @@
 import logging
 
 from .evaluation.base_eval import Evaluation
-from .evaluation.config import EvaluationConfig
+from .evaluation.config import EvaluationConfig, SweepConfig
+from .visualization.comparison import ComparisonGraph
 
-__all__ = ["Evaluation", "EvaluationConfig"]
+__all__ = ["Evaluation", "EvaluationConfig", "SweepConfig", "ComparisonGraph"]
 
 # Set up logging for the library
 # NullHandler prevents "No handler found" warnings and silences logs by default
