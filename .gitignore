@@ -102,3 +102,5 @@ Thumbs.db
 config/
 *.log
 kb_data/
+tests/
+notebooks/
