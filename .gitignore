@@ -101,3 +101,4 @@ Thumbs.db
 .private_data/
 config/
 *.log
+kb_data/

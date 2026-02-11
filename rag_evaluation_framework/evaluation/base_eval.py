@@ -1,4 +1,4 @@
-import json
+import frontmatter
 import logging
 import os
 import uuid
@@ -72,7 +72,7 @@ class Evaluation:
             langsmith_dataset_name, kb_data_path, query_field
         )
 
-    def __get_kb_json_files_path(self) -> List[Path]:
+    def __get_kb_files_path(self) -> List[Path]:
         if not os.path.exists(self.kb_data_path):
             logger.error("Knowledge base path does not exist: %s", self.kb_data_path)
             raise FileNotFoundError(f"Knowledge base data path {self.kb_data_path} does not exist")
@@ -80,9 +80,9 @@ class Evaluation:
         files = [
             Path(os.path.join(self.kb_data_path, file))
             for file in os.listdir(self.kb_data_path)
-            if file.endswith(".json")
+            if file.endswith(".md")
         ]
-        logger.debug("Found %d json files in knowledge base", len(files))
+        logger.debug("Found %d markdown files in knowledge base", len(files))
         return files
 
     def __run_retrieval(self, input: dict, embedder: Embedder, vector_store: VectorStore, k: int, reranker: Optional[Reranker] = None) -> List[dict]:
@@ -190,30 +190,22 @@ class Evaluation:
 
         # Process Knowledge base (chunk, embed and store in vector store)
         logger.info("Processing knowledge base...")
-        kb_markdown_files_path = self.__get_kb_json_files_path()
+        kb_markdown_files_path = self.__get_kb_files_path()
         total_chunks = 0
 
         for file_path in kb_markdown_files_path:
             logger.debug("Processing file: %s", file_path.name)
             with open(file_path, "r", encoding="utf-8") as file:
-                try:
-                    data = json.load(file)
-                except json.JSONDecodeError as exc:
-                    logger.error("Invalid JSON in %s: %s", file_path.name, str(exc))
-                    raise
+                post = frontmatter.load(file)
+                markdown_content = post.content
+                metadata_value = dict(post.metadata) if post.metadata else {}
 
-                markdown_content = data.get("markdown", "")
-                metadata_value = data.get("metadata", {})
-                if not isinstance(metadata_value, dict):
-                    logger.warning(
-                        "Metadata in %s is not an object; wrapping as {'value': metadata}",
-                        file_path.name,
-                    )
-                    metadata_value = {"value": metadata_value}
-
-                doc_id = metadata_value.get("doc_id", file_path.stem)
-                base_metadata = dict(metadata_value)
-                base_metadata.setdefault("doc_id", doc_id)
+                doc_id = file_path.name
+                base_metadata = {
+                    k: v for k, v in metadata_value.items()
+                    if isinstance(v, (str, int, float, bool))
+                }
+                base_metadata["doc_id"] = doc_id
 
                 chunked_docs = chunker.chunk(markdown_content)
                 logger.debug("Created %d chunks from %s", len(chunked_docs), file_path.name)
